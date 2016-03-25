@@ -1,0 +1,27 @@
+api:
+  image: octarine-sapient-walnut
+  environment:
+    - VIRTUAL_HOST=homework.tenletters.org
+#    - LETSENCRYPT_HOST=homework.tenletters.org
+#    - LETSENCRYPT_EMAIL=orclev@gmail.com
+#    - ACME_CA_URI=https://acme-staging.api.letsencrypt.org/directory
+  command: /usr/local/bin/octarine-sapient-walnut-exe
+  ports:
+    - "8080"
+nginxproxy:
+  image: jwilder/nginx-proxy
+  volumes:
+    - /var/run/docker.sock:/tmp/docker.sock:ro
+    - ./certs:/etc/nginx/certs:ro
+    - /etc/nginx/vhost.d
+    - /usr/share/nginx/html
+  ports:
+    - "80:80"
+    - "443:443"
+#letsencrypt:
+#  image: jrcs/letsencrypt-nginx-proxy-companion
+#  volumes:
+#    - ./certs:/etc/nginx/certs:rw
+#    - /var/run/docker.sock:/var/run/docker.sock:ro
+#  volumes_from:
+#    - nginxproxy
