@@ -22,6 +22,7 @@ import Control.Monad.IO.Class (liftIO)
 import System.IO.Unsafe (unsafePerformIO)
 import WorkQueue
 import Data.List (delete, findIndex)
+import Web.HttpApiData (parseQueryParamMaybe)
 
 -- Setup a global in memory queue
 queue :: TVar [QueueEntry]
@@ -36,6 +37,18 @@ app = serve api server
 api :: Proxy API
 api = Proxy
 
+-- Not technically an error, but we want to treat it like one
+err204 :: ServantErr
+err204 = ServantErr { errHTTPCode = 204
+                    , errReasonPhrase = "No Content"
+                    , errBody = ""
+                    , errHeaders = []
+                    }
+
+-- Stupid hack, not sure why this is necessary
+instance FromText UTCTime where 
+  fromText = parseQueryParamMaybe
+
 type Handler = EitherT ServantErr IO
 
 type API = "queue" :> Capture "id" Int :> ReqBody '[JSON] UTCTime :> Put '[JSON] ()
@@ -43,6 +56,7 @@ type API = "queue" :> Capture "id" Int :> ReqBody '[JSON] UTCTime :> Put '[JSON]
       :<|> "queue" :> Capture "id" Int :> Get '[JSON] Position
       :<|> "queue" :> "pop" :> Post '[JSON] QueueEntry
       :<|> "queue" :> Get '[JSON] [Int]
+      :<|> "queue" :> "wait" :> QueryParam "time" UTCTime :> Get '[JSON] AverageWait
 
 server :: Server API
 server = insertEntry
@@ -50,6 +64,7 @@ server = insertEntry
     :<|> findEntryPosition
     :<|> popEntry
     :<|> listEntries
+    :<|> averageWaitTime
 
 insertEntry :: Int -> UTCTime -> Handler ()
 insertEntry i added = do
@@ -93,15 +108,16 @@ popEntry = do
           writeTVar queue (tail q')
           return $ Just $ head q'
 
--- Not technically an error, but we want to treat it like one
-err204 :: ServantErr
-err204 = ServantErr { errHTTPCode = 204
-                    , errReasonPhrase = "No Content"
-                    , errBody = ""
-                    , errHeaders = []
-                    }
-
 listEntries :: Handler [Int]
 listEntries = do
   q <- getSortedQueue
   return $ map entryId q
+
+averageWaitTime :: Maybe UTCTime -> Handler AverageWait
+averageWaitTime Nothing = throwError err400
+averageWaitTime (Just now) = do
+  q <- liftIO . atomically $ readTVar queue
+  let totalWait = foldl (\d e -> d + (now `diffUTCTime` (entryTime e))) (fromInteger 0) q
+      averageWait = totalWait / (fromInteger . toInteger $ (max (length q) 1))
+  return $ AW averageWait
+  

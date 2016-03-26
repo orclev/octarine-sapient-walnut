@@ -3,6 +3,7 @@ module WorkQueue
     ( Type(..)
     , QueueEntry(..)
     , Position(..)
+    , AverageWait(..)
     , sortQueue
     ) where
 
@@ -20,6 +21,12 @@ data Position = Position
   }
 
 $(deriveJSON defaultOptions ''Position)
+
+data AverageWait = AW
+  { averageWait :: NominalDiffTime
+  }
+
+$(deriveJSON defaultOptions ''AverageWait)
 
 data QueueEntry = QE
   { entryId :: Int
