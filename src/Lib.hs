@@ -21,7 +21,7 @@ import Control.Monad.Error.Class (catchError, throwError)
 import Control.Monad.IO.Class (liftIO)
 import System.IO.Unsafe (unsafePerformIO)
 import WorkQueue
-import Data.List (delete)
+import Data.List (delete, findIndex)
 
 -- Setup a global in memory queue
 queue :: TVar [QueueEntry]
@@ -40,12 +40,14 @@ type Handler = EitherT ServantErr IO
 
 type API = "queue" :> Capture "id" Int :> ReqBody '[JSON] UTCTime :> Put '[JSON] ()
       :<|> "queue" :> Capture "id" Int :> Delete '[JSON] ()
+      :<|> "queue" :> Capture "id" Int :> Get '[JSON] Position
       :<|> "queue" :> "pop" :> Post '[JSON] QueueEntry
       :<|> "queue" :> Get '[JSON] [Int]
 
 server :: Server API
 server = insertEntry
     :<|> deleteEntry
+    :<|> findEntryPosition
     :<|> popEntry
     :<|> listEntries
 
@@ -63,6 +65,12 @@ insertEntry i added = do
 
 deleteEntry :: Int -> Handler ()
 deleteEntry i = liftIO . atomically $ modifyTVar queue (\q -> delete (QE i undefined) q)
+
+findEntryPosition :: Int -> Handler Position
+findEntryPosition i = do
+  q <- getSortedQueue
+  let maybePosition = findIndex (\(p,x) -> entryId x == i) $ zip [0..] q
+  maybe (throwError err404) (return . Position) maybePosition
 
 getSortedQueue :: Handler [QueueEntry]
 getSortedQueue = do

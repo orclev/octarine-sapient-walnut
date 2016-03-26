@@ -2,6 +2,7 @@
 module WorkQueue 
     ( Type(..)
     , QueueEntry(..)
+    , Position(..)
     , sortQueue
     ) where
 
@@ -13,6 +14,12 @@ import Data.List (sortBy, partition)
 
 data Type = Normal | Priority | VIP | Override
   deriving (Show,Eq)
+
+data Position = Position
+  { position :: Int
+  }
+
+$(deriveJSON defaultOptions ''Position)
 
 data QueueEntry = QE
   { entryId :: Int
