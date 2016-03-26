@@ -28,6 +28,7 @@ import Data.Time
 import System.IO.Unsafe (unsafePerformIO)
 import Network.HTTP.Types
 import Data.Default (def)
+import Text.Pandoc
 
 type DocsAPI = "docs" :> Raw
 
@@ -39,27 +40,33 @@ api = Proxy
 
 server :: Server DocsAPI
 server = serveDocs
-  where serveDocs _ respond = respond $ responseLBS ok200 [plain] Docs.docsBS
-        plain = ("Content-Type", "text/plain")
+  where serveDocs _ respond = respond $ responseLBS ok200 [html] Docs.docsBS
+        html = ("Content-Type", "text/html")
 
 docsBS :: ByteString
-docsBS = encodeUtf8 . pack . markdown $ docsWithIntros [intro] API.api
-  where intro = DocIntro "Octarine Sapient Walnut (Aspect Homework)" ["Implements Aspect Homework in Haskell using Servant"]
+docsBS = encodeUtf8 . pack $ writeHtmlString writerOpts pandoc
+  where 
+    intro = DocIntro "Octarine Sapient Walnut (Aspect Homework)" ["Implements Aspect Homework in Haskell using Servant"]
+    pandoc = extractRight . readMarkdown def . markdown $ docsWithIntros [intro] API.api
+    extractRight (Right x) = x
+    writerOpts = def { writerStandalone = False
+                     , writerHtml5 = True 
+                     }
 
 instance ToSample Position where
-  toSamples _ = singleSample (Position 12)
+  toSamples _ = [("Entries position in the queue, 0 indexed", Position 12)]
 
 instance ToSample Int where
-  toSamples _ = singleSample 42
+  toSamples _ = [("Management Override ID", 15),("Normal ID", 1),("Priority ID", 3),("VIP ID", 5)]
 
 instance ToSample UTCTime where
-  toSamples _ = singleSample (unsafePerformIO getCurrentTime)
+  toSamples _ = [("Time in ISO 8601 format", unsafePerformIO getCurrentTime)]
 
 instance ToSample AverageWait where
-  toSamples _ = singleSample (AW 60)
+  toSamples _ = [("Average time entries have been in the queue", AW 60)]
 
 instance ToSample QueueEntry where
-  toSamples _ = singleSample (QE 15 (unsafePerformIO getCurrentTime))
+  toSamples _ = [("Queue Entry" , QE 15 (unsafePerformIO getCurrentTime))]
 
 instance ToCapture (Capture "id" Int) where
   toCapture _ =
@@ -70,6 +77,6 @@ instance ToParam (QueryParam "time" UTCTime) where
   toParam _ =
     DocQueryParam "time"
                   [show $ unsafePerformIO getCurrentTime]
-                  "The current time."
+                  "The current time in ISO 8601 format"
                   Normal
 
