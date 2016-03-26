@@ -1,64 +1,30 @@
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Lib
     ( startApp
     , insertEntry
     ) where
 
 import Data.Aeson
-import Data.Aeson.TH
+--import Data.Aeson.TH
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 import Data.Time
-import Control.Arrow hiding (app)
-import Data.List (sortBy, partition)
 import Control.Monad.STM
+import Control.Concurrent.STM.TVar
 import Control.Monad.Trans.Either
+import Control.Monad.Error.Class (catchError, throwError)
+import Control.Monad.IO.Class (liftIO)
+import System.IO.Unsafe (unsafePerformIO)
+import WorkQueue
 
-data Type = Normal | Priority | VIP | Override
-  deriving (Show,Eq)
-
-data QueueEntry = QE 
-  { entryId :: Int
-  , entryTime :: UTCTime
-  , entryType :: Type
-  }
-
-data User = User
-  { userId        :: Int
-  , userFirstName :: String
-  , userLastName  :: String
-  } deriving (Eq, Show)
-
-$(deriveJSON defaultOptions ''User)
-
-type API = "queue" :> Capture "id" Int :> Put '[JSON] ()
-      :<|> "queue" :> Get '[JSON] Int
-
-idToType :: Int -> Type
-idToType x | x `mod` 15 == 0 = Override
-           | x `mod` 5 == 0 = VIP
-           | x `mod` 3 == 0 = Priority
-           | otherwise = Normal
-
-sortQueue :: UTCTime -> [QueueEntry] -> [QueueEntry]
-sortQueue now xs = uncurry (++) $ (sortBy sort') *** (sortBy sort') $ partition (\x -> entryType x == Override) xs
-  where
-    scoreEntry x = calculateScore (entryType x) (min 0 (now `diffUTCTime` entryTime x))
-    sort' x y = compare (scoreEntry x) (scoreEntry y)
-
-calculateScore :: Type -> NominalDiffTime -> NominalDiffTime
-calculateScore t d = 
-  case t of 
-    Override -> d
-    Normal -> d
-    Priority -> coerce $ max 3 ((coerce d) * log (coerce d))
-    VIP -> coerce $ max 4 (2 * (coerce d) * log (coerce d))
-
-coerce :: (Num a, Ord a, Real a, Fractional b, Num b) => a -> b
-coerce = fromRational . toRational
+-- Setup a global in memory queue
+queue :: TVar [QueueEntry]
+queue = unsafePerformIO $ newTVarIO []
 
 startApp :: IO ()
 startApp = run 8080 app
@@ -69,14 +35,53 @@ app = serve api server
 api :: Proxy API
 api = Proxy
 
+type Handler = EitherT ServantErr IO
+
+type API = "queue" :> Capture "id" Int :> ReqBody '[JSON] UTCTime :> Put '[JSON] ()
+      :<|> "queue" :> "pop" :> Post '[JSON] QueueEntry
+      :<|> "queue" :> Get '[JSON] [Int]
+
 server :: Server API
 server = insertEntry
-    :<|> return 42
+    :<|> popEntry
+    :<|> listEntries
 
-insertEntry :: Int -> EitherT ServantErr IO ()
-insertEntry _ = return ()
+insertEntry :: Int -> UTCTime -> Handler ()
+insertEntry i added = do
+  now <- liftIO getCurrentTime
+  let entry = QE i added
+  liftIO . atomically $ modifyTVar queue (\xs -> sortQueue now (entry:xs))
 
-users :: [User]
-users = [ User 1 "Isaac" "Newton"
-        , User 2 "Albert" "Einstein"
-        ]
+getSortedQueue :: Handler [QueueEntry]
+getSortedQueue = do
+  now <- liftIO getCurrentTime
+  q <- liftIO . atomically $ readTVar queue 
+  return $ sortQueue now q
+
+popEntry :: Handler QueueEntry
+popEntry = do
+  now <- liftIO getCurrentTime
+  maybeEntry <- findEntry now
+  maybe (throwError err204) return maybeEntry
+  where
+    findEntry t = liftIO . atomically $ do
+      q <- readTVar queue
+      let q' = sortQueue t q
+      case q' of
+        [] -> return Nothing
+        x:_ -> do
+          writeTVar queue (tail q')
+          return $ Just $ head q'
+
+-- Not technically an error, but we want to treat it like one
+err204 :: ServantErr
+err204 = ServantErr { errHTTPCode = 204
+                    , errReasonPhrase = "No Content"
+                    , errBody = ""
+                    , errHeaders = []
+                    }
+
+listEntries :: Handler [Int]
+listEntries = do
+  q <- getSortedQueue
+  return $ map entryId q
