@@ -17,7 +17,10 @@ data Type = Normal | Priority | VIP | Override
 data QueueEntry = QE
   { entryId :: Int
   , entryTime :: UTCTime
-  } deriving (Eq, Show)
+  } deriving (Show)
+
+instance Eq QueueEntry where
+  a == b = entryId a == entryId b
 
 $(deriveJSON defaultOptions ''QueueEntry)
 

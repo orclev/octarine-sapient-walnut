@@ -50,7 +50,13 @@ insertEntry :: Int -> UTCTime -> Handler ()
 insertEntry i added = do
   now <- liftIO getCurrentTime
   let entry = QE i added
-  liftIO . atomically $ modifyTVar queue (\xs -> sortQueue now (entry:xs))
+  result <- liftIO . atomically $ do
+    q <- readTVar queue
+    if entry `elem` q then
+      return Nothing -- This is ugly, find a better way to do this
+    else
+      modifyTVar queue (\xs -> sortQueue now (entry:xs)) >> (return $ Just ())
+  maybe (throwError err409) return result
 
 getSortedQueue :: Handler [QueueEntry]
 getSortedQueue = do
