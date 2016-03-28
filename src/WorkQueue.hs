@@ -60,12 +60,3 @@ calculateScore t d =
 
 coerce :: (Num a, Ord a, Real a, Fractional b, Num b) => a -> b
 coerce = fromRational . toRational
-
---data User = User
---  { userId        :: Int
---  , userFirstName :: String
---  , userLastName  :: String
---  } deriving (Eq, Show)
-
--- $(deriveJSON defaultOptions ''User)
-

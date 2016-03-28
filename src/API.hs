@@ -31,12 +31,6 @@ import Data.ByteString.Lazy (ByteString)
 queue :: TVar [QueueEntry]
 queue = unsafePerformIO $ newTVarIO []
 
-startApp :: IO ()
-startApp = run 8080 app
-
-app :: Application
-app = serve api server
-
 api :: Proxy API
 api = Proxy
 
@@ -47,10 +41,6 @@ err204 = ServantErr { errHTTPCode = 204
                     , errBody = ""
                     , errHeaders = []
                     }
-
--- Stupid hack, not sure why this is necessary
---instance FromText UTCTime where 
---  fromText = parseQueryParamMaybe
 
 type Handler = ExceptT ServantErr IO
 
